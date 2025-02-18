@@ -1,0 +1,62 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel SampleImage
+
+
+RWTexture2D<float4> _InputTexture;
+StructuredBuffer<float2> _Positions; 
+StructuredBuffer<float> _RFSize;
+RWStructuredBuffer<uint> _IndexArray; //Activation index array
+RWStructuredBuffer<uint> _Counter;
+RWStructuredBuffer<float2> _Debug;
+float _Fov;
+uint _Count;
+int _TextureSize;
+int _Offsetx;
+int _Offsety;
+
+[numthreads(64, 1, 1)]
+void SampleImage(uint3 id : SV_DispatchThreadID)
+
+{
+    uint i = id.x;
+
+    
+    float Radius = _RFSize[i];
+    
+    float cx = _Positions[i].x + _Offsetx; 
+    float cy = _Positions[i].y + _Offsety; //We use minus because y axis is inverted in compute shaders
+
+    // Calculate search bounds around the center
+    int minX = max(0, int(floor(cx - Radius)));
+    int maxX = min(int(_TextureSize) - 1, int(ceil(cx + Radius)));
+    int minY = max(0, int(floor(cy - Radius)));
+    int maxY = min(int(_TextureSize) - 1, int(ceil(cy + Radius)));
+    //Can be precalculated probably
+   
+    
+    
+    // Iterate over each pixel in the calculated bounds
+    for (int x = minX; x <= maxX; ++x)
+    {
+        for (int y = minY; y <= maxY; ++y)
+        {
+            
+            float4 color = _InputTexture.Load(int3(x, y, 0));
+            if (color.g > 0.0)
+            {
+                _IndexArray[i] = 1;
+                return;
+            }
+            
+           
+        }
+        
+        
+    }
+    _Debug[i].x = cx;
+    _Debug[i].y = cy;
+    _IndexArray[i] = 0;
+}
+
+
+

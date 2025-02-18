@@ -1,0 +1,34 @@
+#pragma kernel UpdatePhosphenes
+
+struct PhospheneData {
+    float2 position; // 2 * 4 = 8 bytes
+    float m;         // 4 bytes
+    float current;   // 4 bytes
+    float charge;    // 4 bytes
+    float brightness;// 4 bytes
+    float padding;   // 4 bytes (to match 24-byte stride)
+};
+
+RWStructuredBuffer<PhospheneData> _Phosphenes;
+Texture2D<float> _EdgeTexture;
+float2 _TexelSize;
+float _DeltaTime;
+
+[numthreads(64,1,1)]
+void UpdatePhosphenes (uint3 id : SV_DispatchThreadID) {
+    PhospheneData p = _Phosphenes[id.x];
+
+    float stimulus = 0;
+    for(int x=-3; x<=3; x++) {
+        for(int y=-3; y<=3; y++) {
+            stimulus = max(stimulus, _EdgeTexture.Load(int3(p.position + float2(x,y)*_TexelSize, 0)));
+        }
+    }
+
+    float stimulation = max(0, 0.051 * (100e-6 * stimulus - p.current));
+    p.current += (14 * stimulation - p.current / 1.97e3) * _DeltaTime;
+    p.charge += (stimulation - p.charge / 0.111) * _DeltaTime;
+    p.brightness = 1 / (1 + exp(-1.92e7 * (p.charge - 1.06e-7)));
+
+    _Phosphenes[id.x] = p;
+}
