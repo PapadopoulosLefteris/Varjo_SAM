@@ -6,6 +6,11 @@ using System.IO;
 using System.Collections.Generic;
 using System;
 using System.Numerics;
+using System.Collections;
+
+
+
+
 using static PhospheneRenderer;
 
 
@@ -14,7 +19,7 @@ public class PhospheneRenderer : MonoBehaviour
 
     //Objects
     public EyeTrackingCapture EyeTacker;
-
+    public SAMDoji model;
 
     //Struct variables
     private Phosphene[] phosphenes; // Your phosphene data structure
@@ -25,7 +30,9 @@ public class PhospheneRenderer : MonoBehaviour
     public RenderTexture phospheneRenderTexture;
     public RenderTexture inputTexture;
     public RenderTexture edgeTexture;
+    public RenderTexture phospheneInputTexture;
     public RawImage outputRawImage;
+    public RectTransform canvasRectTransform;
 
     //Render Texture properties
     public int textureWidth = 512;
@@ -55,7 +62,7 @@ public class PhospheneRenderer : MonoBehaviour
     public static float b = 120.0f;
     public static float k = 17.3f;
     public static float amp = 150e-6f;
-    public static float fov = 180.0f;
+    public static float fov = 102.0f;
     public static float radius_to_sigma = 0.5f;
     public static float current_spread = 675e-6f;
     public static float rf_size = 0.5f;
@@ -64,7 +71,9 @@ public class PhospheneRenderer : MonoBehaviour
     public string yamlFilePath = "C:\\Users\\Administrator\\Desktop\\phosphene_schemes\\grid_coords_squares_utah.yaml";
 
     public float offsetx = 0;
-    public float offsety = 0;    
+    public float offsety = 0;
+    public float[] pointCoords;
+    public float[] pointLabels;
 
     // The class that represents the YAML structure
     public class PhosphenePositions
@@ -83,15 +92,17 @@ public class PhospheneRenderer : MonoBehaviour
     }
 
 
-
     void Start()
     {
+        QualitySettings.vSyncCount = 0;
+        Application.targetFrameRate = 5;
         InitializeRenderTexture();
         InitializePhosphenes();
         InitializeMaterial();
 
         outputRawImage.texture = phospheneRenderTexture;
-
+        pointCoords = new float[2] { 512, 512 };
+        pointLabels = new float[1] { 1.0f };
         //For testing Edge Detection
         //outputRawImage.texture = edgeTexture;
 
@@ -100,8 +111,15 @@ public class PhospheneRenderer : MonoBehaviour
 
     void Update()
     {
+
+
+        
         GazeOffset();
-        ApplyEdgeDetection();
+        model.Seg(inputTexture, pointCoords,pointLabels);
+
+        
+        Graphics.Blit(model.mobileSAMPredictor.Result, phospheneInputTexture);
+        //ApplyEdgeDetection();
         RenderPhosphenes();
         // Check if the "F" key is pressed
         if (Input.GetKeyDown(KeyCode.F))
@@ -111,7 +129,7 @@ public class PhospheneRenderer : MonoBehaviour
         }
         if (Input.GetKeyDown(KeyCode.E))
         {
-            outputRawImage.texture = edgeTexture;
+            outputRawImage.texture = phospheneInputTexture;
         }
         if (Input.GetKeyDown(KeyCode.R))
         {
@@ -248,6 +266,12 @@ public class PhospheneRenderer : MonoBehaviour
         };
         phospheneRenderTexture.Create();
 
+        phospheneInputTexture = new RenderTexture(textureWidth, textureHeight, 0, RenderTextureFormat.ARGB32)
+        {
+            enableRandomWrite = true
+        };
+        phospheneInputTexture.Create();
+
 
         edgeTexture = new RenderTexture(textureWidth, textureHeight, 0, RenderTextureFormat.ARGB32){
             enableRandomWrite = true
@@ -267,11 +291,14 @@ public class PhospheneRenderer : MonoBehaviour
         phospheneMaterial = new Material(phospheneShader);
     }
 
+
+
     void GazeOffset()
     {
-        EyeTacker.GetEyeTracking();
-        offsetx = EyeTacker.x;
-        offsety = EyeTacker.y;
+        //EyeTacker.GetEyeTracking();
+        offsetx = EyeTacker.offsetx;
+        offsety = EyeTacker.offsety;
+        pointCoords = new float[2] { (float) EyeTacker.x,(float) EyeTacker.y};
     }
 
 
@@ -327,14 +354,13 @@ public class PhospheneRenderer : MonoBehaviour
         indexArrayBuffer.SetData(zeroArray);
 
         // Pass the edgeTexture to the compute shader as input
-
-        //Texture2D whiteTex = Texture2D.whiteTexture;
        
         if (debugBuffer != null)
             debugBuffer.Release();
         debugBuffer = new ComputeBuffer(phospheneCount,sizeof(float)*2);
 
-        phospheneComputeShader.SetTexture(kernel, "_InputTexture", edgeTexture);
+        //phospheneComputeShader.SetTexture(kernel, "_InputTexture", edgeTexture);
+        phospheneComputeShader.SetTexture(kernel, "_InputTexture", phospheneInputTexture);
         phospheneComputeShader.SetBuffer(kernel, "_Positions", positionsBuffer);
         phospheneComputeShader.SetBuffer(kernel, "_RFSize", rfBuffer);
         phospheneComputeShader.SetBuffer(kernel, "_IndexArray", indexArrayBuffer);
@@ -363,7 +389,6 @@ public class PhospheneRenderer : MonoBehaviour
         // Loop through the index array and select positions where the index is 1
         for (int i = 0; i < phospheneCount; i++)
         {
-                        
             if (zeroArray[i] == 1)
             {
                 // Add the position to the list if the corresponding index is 1
@@ -378,7 +403,7 @@ public class PhospheneRenderer : MonoBehaviour
         // Convert the list to an array
         UnityEngine.Vector2[] filteredPositions = selectedPositions.ToArray();
         float[] filteredSigmas = selectedSigmas.ToArray();
-
+        
         phospheneMaterial.SetFloat("_Fov", fov);
         // Set shader properties
         if (filteredPositions.Length == 0)
@@ -387,8 +412,6 @@ public class PhospheneRenderer : MonoBehaviour
         }
         else
         {
-            //Debug.Log("Content in Array");
-            //Debug.Log($"{newlength}, {phospheneCount}");
             if (newbuff != null)
                 newbuff.Release();
 
@@ -410,8 +433,10 @@ public class PhospheneRenderer : MonoBehaviour
             // Render to texture
             Graphics.SetRenderTarget(phospheneRenderTexture);
             GL.Clear(true, true, Color.clear);
-            
-            Graphics.Blit(edgeTexture, phospheneRenderTexture, phospheneMaterial);
+
+            Graphics.Blit(null, phospheneRenderTexture, phospheneMaterial);
+            //Graphics.Blit(phospheneInputTexture, phospheneRenderTexture, phospheneMaterial);
+
         }
 
 

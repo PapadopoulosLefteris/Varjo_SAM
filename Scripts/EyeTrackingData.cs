@@ -14,9 +14,13 @@ public class EyeTrackingCapture : MonoBehaviour
     private Vector3 rayOrigin;
     public Transform fixationPointTransform;
     public Vector3 testpointposition;
+    public Vector3 gazeDirection;
     private float floatingGazeTargetDistance = 3f;
+    public int offsetx;
+    public int offsety;
+
     public int x;
-    public int y;   
+    public int y;
     private int imagesize;
     private int screenWidth;
     private int screenHeight;   
@@ -27,10 +31,22 @@ public class EyeTrackingCapture : MonoBehaviour
     void Start()
     {
         imagesize = passThroughRenderTexture.width;
+        Debug.Log($"Screen width {Screen.width}");
+        Debug.Log($"Screen height {Screen.height}");
         //screenWidth = Screen.width;
         //screenHeight = Screen.height;
-        screenHeight = 662;
-        screenWidth = 668;
+        //screenHeight = 662;
+        //screenWidth = 668;
+
+        screenWidth = 710;
+        screenHeight = 704;
+        VarjoEyeTracking.SetGazeOutputFilterType(VarjoEyeTracking.GazeOutputFilterType.None);
+        Debug.Log(VarjoEyeTracking.GetGazeOutputFilterType());
+    }
+
+    void Update()
+    {
+        GetEyeTracking();
     }
 
     public void GetEyeTracking()
@@ -46,7 +62,7 @@ public class EyeTrackingCapture : MonoBehaviour
 
         }
 
-        if (Input.GetKeyDown(KeyCode.D))
+        if (Input.GetKeyDown(KeyCode.X))
         {
             // Set calibration to full mode
             VarjoEyeTracking.GazeCalibrationMode gazeCalibrationMode = VarjoEyeTracking.GazeCalibrationMode.OneDot;
@@ -54,13 +70,15 @@ public class EyeTrackingCapture : MonoBehaviour
             VarjoEyeTracking.RequestGazeCalibration(gazeCalibrationMode);
         }
 
+        //GazeOutputFilterType VarjoEyeTracking.GetGazeOutputFilterType();
+        
 
         //GET GAZE COORDINATES
         // Get the most recent gaze data
         VarjoEyeTracking.GazeData gazeData = VarjoEyeTracking.GetGaze();
 
         // Get the gaze direction
-        Vector3 gazeDirection = gazeData.gaze.forward;  // Gaze direction
+        gazeDirection = gazeData.gaze.forward;  // Gaze direction
 
         rayOrigin = playerCamera.transform.TransformPoint(gazeData.gaze.origin);
 
@@ -68,7 +86,7 @@ public class EyeTrackingCapture : MonoBehaviour
        direction = playerCamera.transform.TransformDirection(new Vector3(
        gazeData.gaze.forward.x,
        gazeData.gaze.forward.y,
-       0.2f
+       0.6f
        )); //Optimal z?
 
 
@@ -81,17 +99,26 @@ public class EyeTrackingCapture : MonoBehaviour
         gazeTarget.transform.localScale = Vector3.one * floatingGazeTargetDistance / 100;
 
         Vector3 screenPoint = playerCamera.WorldToScreenPoint(gazeTarget.transform.position);
-        x = Mathf.RoundToInt((screenPoint.x - screenWidth)/(screenWidth) * imagesize/2);
-        y = Mathf.RoundToInt((screenPoint.y - screenHeight) / ( screenHeight) * imagesize/2);
+
+        x = Mathf.RoundToInt((screenPoint.x) / (screenWidth) * imagesize / 2);
+        y = imagesize - Mathf.RoundToInt((screenPoint.y / screenHeight) * imagesize / 2);
+
+        offsetx = Mathf.RoundToInt((screenPoint.x - screenWidth)/(screenWidth) * imagesize/4f);
+        offsety = Mathf.RoundToInt((screenPoint.y - screenHeight) / ( screenHeight) * imagesize/4f);
         //x = Mathf.RoundToInt((screenPoint.x / 2840) * imagesize);
         //y= imagesize - Mathf.RoundToInt((screenPoint.y / 2816) * imagesize);
 
-
+        //Debug.Log(gazeDirection);
+        Debug.Log($"Offsetx = {offsetx}, Offsety = {offsety}, imagesize = {imagesize}");
         Debug.Log($"X = {x}, Y = {y}, Screenpoint_x = {screenPoint.x}, Screenpoint_y = {screenPoint.y}");
-        Debug.Log("Screen Resolution: " + Screen.width + "x" + Screen.height);
+        //Debug.Log("Screen Resolution: " + Screen.width + "x" + Screen.height);
 
 
     }
+    void CalculateCalibrationQuality()
+    {
+        Debug.Log($"Calibration Quality Left: {VarjoEyeTracking.GetGazeCalibrationQuality().left}, Calibration Quality Right {VarjoEyeTracking.GetGazeCalibrationQuality().right}s");
+    }
 
-     
+
 }

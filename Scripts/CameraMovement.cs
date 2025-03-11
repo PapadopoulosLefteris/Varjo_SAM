@@ -6,6 +6,8 @@ public class CameraMovement : MonoBehaviour
     public float mouseSensitivity = 100f;   // Speed of rotation with the mouse
 
     public Camera captureCamera;            // The camera that will follow the target camera's rotation
+    public Camera VRCamera;
+
 
     private float xRotation = 0f;           // To store up-down rotation
 
@@ -23,6 +25,7 @@ public class CameraMovement : MonoBehaviour
         // Rotate the camera with mouse input
         RotateCamera();
 
+        //SyncCameraWithXR();
     }
 
     void MoveCamera()
@@ -52,5 +55,12 @@ public class CameraMovement : MonoBehaviour
         transform.localRotation = Quaternion.Euler(xRotation, transform.localEulerAngles.y + mouseX, 0f);
     }
 
-   
+    void SyncCameraWithXR()
+    {
+        // Sync position
+        transform.position = VRCamera.transform.position;
+
+        // Sync rotation (only left-right, up-down rotation should be handled in the RotateCamera method)
+        transform.rotation = Quaternion.Euler(VRCamera.transform.rotation.eulerAngles.x, VRCamera.transform.rotation.eulerAngles.y, 0f);
+    }
 }

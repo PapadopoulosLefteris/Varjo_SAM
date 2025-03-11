@@ -21,18 +21,30 @@ public class Segment : MonoBehaviour
     public Worker preprocessing_worker;
     public Worker worker;
 
+    Tensor<float> inputTensor;
+    Tensor<float> finalTensor;
+    Tensor<float> image_embeddings;
+    Tensor<float> high_res_features1;
+    Tensor<float> high_res_features2;
+    Tensor<int> orig_im_size;
+    Tensor<float> mask_input;
+    Tensor<float> has_mask_input;
+    Tensor<float> coordinateTensor;
+    Tensor<float> point_labels;
 
     int[] im_size;
     float[] point_label;
     TextureTransform out_transform;
     TextureTransform in_transform;
+    bool isinferencePending;
+    bool ispreprocessingPending;
+
 
     // Start is called before the first frame update
     void Start()
     {
-
-
-
+        isinferencePending = false;
+        ispreprocessingPending = false; 
 
         segmented = new RenderTexture(1024, 1024, 0, RenderTextureFormat.R8)
         {
@@ -47,7 +59,7 @@ public class Segment : MonoBehaviour
 
 
         preprocessorModel = ModelLoader.Load(preprocessor);
-        preprocessing_worker = new Worker(preprocessorModel, BackendType.CPU);
+        preprocessing_worker = new Worker(preprocessorModel, BackendType.GPUCompute);
 
 
         
@@ -56,9 +68,14 @@ public class Segment : MonoBehaviour
         im_size = new int[] { 1024, 1024 };
 
 
+        image_embeddings = new Tensor<float>(new TensorShape(1, 256, 64, 64));
+        point_labels = new Tensor<float>(new TensorShape(1), point_label);
+        orig_im_size = new Tensor<int>(new TensorShape(2), im_size);
+        mask_input = new Tensor<float>(new TensorShape(1, 1, 256, 256));
+        has_mask_input = new Tensor<float>(new TensorShape(1));
 
 
-        
+
 
 
         out_transform = new TextureTransform().SetDimensions(channels: 1);
@@ -70,32 +87,63 @@ public class Segment : MonoBehaviour
 
     void Update()
     {
-        
-        
-        
-
-        Tensor<float> inputTensor = TextureConverter.ToTensor(inputTexture,in_transform);
-
-
+        inputTensor = TextureConverter.ToTensor(inputTexture, in_transform);
         Debug.Log(inputTensor);
 
+
+        float startTime = Time.realtimeSinceStartup;
+
+        Preprocess(inputTensor);
+        //if (!ispreprocessingPending) {
+        //    Preprocess(inputTensor);
+        //    ispreprocessingPending = true;
+        //}
+        Debug.Break();
+        //else if (ispreprocessingPending && image_embeddings.IsReadbackRequestDone())
+        //{ RetrievePreprocessed();
+        //  ispreprocessingPending= false;
+        
+        //}
+        float endTime = Time.realtimeSinceStartup;
+        //Debug.Log("Preprocessing time: " + (endTime - startTime) + " seconds, Pending: " + ispreprocessingPending);
+
+        //startTime = Time.realtimeSinceStartup;
+        //if (!isinferencePending) {
+        //    Infer();
+        //}
+        //else if (isinferencePending && finalTensor.IsReadbackRequestDone())
+        //{
+        //    RetrieveInference();
+        //}
+        //endTime = Time.realtimeSinceStartup;
+        //Debug.Log("Inference time: " + (endTime - startTime) + " seconds");
+
+
+
+
+    }
+
+    async void Preprocess(Tensor<float> inputTensor)
+    {
         preprocessing_worker.Schedule(inputTensor);
+        ispreprocessingPending = true;
+    }
+    async void RetrievePreprocessed()
+    {
+        image_embeddings = preprocessing_worker.PeekOutput("image_embeddings") as Tensor<float>;
+        high_res_features1 = preprocessing_worker.PeekOutput("high_res_features1") as Tensor<float>;
+        high_res_features2 = preprocessing_worker.PeekOutput("high_res_features2") as Tensor<float>;
+    }
+    void Infer()
+    {
+           
+             
+        float[] coordinateArray = new float[] { 512.0f, 512.0f }; // (x, y) coordinates
+        coordinateTensor = new Tensor<float>(new TensorShape(1, 1, 2), coordinateArray);
+
 
         
-
-
-        Tensor<float> image_embeddings = preprocessing_worker.PeekOutput("image_embeddings") as Tensor<float>;
-        Tensor<float> high_res_features1 = preprocessing_worker.PeekOutput("high_res_features1") as Tensor<float>;
-        Tensor<float> high_res_features2 = preprocessing_worker.PeekOutput("high_res_features2") as Tensor<float>;
-
-        float[] coordinateArray = new float[] { 512.0f, 512.0f }; // (x, y) coordinates
-        Tensor<float> coordinateTensor = new Tensor<float>(new TensorShape(1, 1, 2), coordinateArray);
-
-
-        Tensor<float> point_labels = new Tensor<float>(new TensorShape(1, 1), point_label);
-        Tensor<float> mask_input = new Tensor<float>(new TensorShape(1, 1, 256, 256));
-        Tensor<float> has_mask_input = new Tensor<float>(new TensorShape(1));
-        Tensor<int> orig_im_size = new Tensor<int>(new TensorShape(2), im_size);
+        
 
         worker.SetInput("image_embeddings", image_embeddings);
         worker.SetInput("high_res_features1", high_res_features1);
@@ -105,18 +153,17 @@ public class Segment : MonoBehaviour
         worker.SetInput("mask_input", mask_input);
         worker.SetInput("has_mask_input", has_mask_input);
         worker.SetInput("orig_im_size", orig_im_size);
-
-
-        float startTime = Time.realtimeSinceStartup;
-
         worker.Schedule();
-        float endTime = Time.realtimeSinceStartup;
-        Debug.Log("Execution time: " + (endTime - startTime) + " seconds");
 
-        Tensor<float> finalTensor = worker.PeekOutput("masks") as Tensor<float>;
+
+
+    }
+
+
+    void RetrieveInference()
+    {
+        finalTensor = worker.PeekOutput("masks") as Tensor<float>;
         segmented = TextureConverter.ToTexture(finalTensor, out_transform);
-
-        
     }
 
 }

@@ -23,8 +23,8 @@ void SampleImage(uint3 id : SV_DispatchThreadID)
     
     float Radius = _RFSize[i];
     
-    float cx = _Positions[i].x + _Offsetx; 
-    float cy = _Positions[i].y + _Offsety; //We use minus because y axis is inverted in compute shaders
+    float cx = _Positions[i].x+ _Offsetx; 
+    float cy = _Positions[i].y+ _Offsety; //We use minus because y axis is inverted in compute shaders
 
     // Calculate search bounds around the center
     int minX = max(0, int(floor(cx - Radius)));
@@ -55,7 +55,7 @@ void SampleImage(uint3 id : SV_DispatchThreadID)
     }
     _Debug[i].x = cx;
     _Debug[i].y = cy;
-    _IndexArray[i] = 0;
+    //_IndexArray[i] = 1; //use for debugging eyetracker
 }
 
 

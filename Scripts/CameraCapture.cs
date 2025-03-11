@@ -5,10 +5,11 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using Varjo.XR;
 
+
 // Screen dimensions are Width:696 Height:376
 // Screen Pixel Width: 2840 Height:2816
 
-public class CameraCapture : MonoBehaviour
+public class ServerController : MonoBehaviour
 {
     public GameObject gazeTarget;
 
@@ -16,8 +17,10 @@ public class CameraCapture : MonoBehaviour
     public Camera passThroughCaptureCamera;       // Assign the secondary camera
     public RawImage rawImageDisplay;              // Assign the RawImage component from your Canvas
     public RenderTexture passThroughRenderTexture; // Assign the Render Texture here
-    private HttpClient httpClient = new HttpClient();
-    private bool isProcessingFrame = false;       // Tracks if the current frame is being processed
+    public Texture2D processedTexture;
+    
+    private HttpClient httpClient;
+    public bool isProcessingFrame = false;       // Tracks if the current frame is being processed
     private float captureInterval = 0.07f;         // Capture every 0.1 seconds
     private float nextCaptureTime = 0;
     public float floatingGazeTargetDistance = 3f;
@@ -34,6 +37,11 @@ public class CameraCapture : MonoBehaviour
 
     void Start()
     {
+
+
+        
+        httpClient = new HttpClient();
+        
         imagesize = passThroughRenderTexture.width;
         gazeTarget.SetActive(true);
         // Set RawImage aspect ratio to match the camera's render texture aspect ratio
@@ -43,89 +51,19 @@ public class CameraCapture : MonoBehaviour
      
     }
 
-    void Update()
-    {
+    //void Update()
+    //{
 
-        if (Input.GetKeyDown(KeyCode.F))
-        {
-            // Set calibration to full mode
-            VarjoEyeTracking.GazeCalibrationMode gazeCalibrationMode = VarjoEyeTracking.GazeCalibrationMode.Fast;
-            // Call the gaze calibration function
-            VarjoEyeTracking.RequestGazeCalibration(gazeCalibrationMode);
-
-
-        }
-
-        if (Input.GetKeyDown(KeyCode.D))
-        {
-            // Set calibration to full mode
-            VarjoEyeTracking.GazeCalibrationMode gazeCalibrationMode = VarjoEyeTracking.GazeCalibrationMode.OneDot;
-            // Call the gaze calibration function
-            VarjoEyeTracking.RequestGazeCalibration(gazeCalibrationMode);
+    //    rawImageDisplay.texture = processedTexture;
+    //    //Capture frames at a set interval, but skip if a frame is being processed
+    //    if (!isProcessingFrame && Time.time >= nextCaptureTime)
+    //        if (!isProcessingFrame)
+    //        {
+    //            StartCoroutine(CaptureAndSendImage(100, 100));
+    //        }
+    //}
 
 
-        }
-        //// Calculate FPS
-        //if (lastFrameTime > 0)
-        //{
-        //    float timeTaken = Time.time - lastFrameTime;
-        //    fps = 1f / timeTaken;
-        //}
-        //lastFrameTime = Time.time;
-
-        //Debug.Log("FPS: " + fps);
-
-
-        //GET GAZE COORDINATES
-        // Get the most recent gaze data
-        VarjoEyeTracking.GazeData gazeData = VarjoEyeTracking.GetGaze();
-
-        // Get the gaze direction
-        Vector3 gazeDirection = gazeData.gaze.forward;  // Gaze direction
-
-        rayOrigin = playerCamera.transform.TransformPoint(gazeData.gaze.origin);
-
-        // Set gaze direction as raycast direction
-        //direction = playerCamera.transform.TransformDirection(gazeDirection);
-        direction = playerCamera.transform.TransformDirection(new Vector3(
-        gazeData.gaze.forward.x ,
-        gazeData.gaze.forward.y ,
-        0.2f 
-        )); //Why do we need z to be close to 0??
-
-
-        
-        //SHOW GAZE TARGET
-        // Update gaze target's position in world space
-        gazeTarget.transform.position = playerCamera.transform.position + playerCamera.transform.forward +
-                                         direction * gazeData.focusDistance;
-
-     
-        gazeTarget.transform.localScale = Vector3.one * floatingGazeTargetDistance / 100;
-        //Vector3 screenPoint = playerCamera.WorldToScreenPoint(gazeTarget.transform.position);
-        Vector3 screenPoint = playerCamera.WorldToScreenPoint(gazeTarget.transform.position);
-        int newX = Mathf.RoundToInt((screenPoint.x / 2840) * imagesize);
-        int newY = imagesize - Mathf.RoundToInt((screenPoint.y / 2816) * imagesize);
-
-
-
-
-
-
-        // Capture frames at a set interval, but skip if a frame is being processed
-        //if (!isProcessingFrame && Time.time >= nextCaptureTime)
-        if (!isProcessingFrame)
-        {
-            nextCaptureTime = Time.time + captureInterval;
-            StartCoroutine(CaptureAndSendImage(newX, newY));
-        }
-    }
-
-
-    void CalculateCalibrationQuality()
-    {
-        Debug.Log($"Calibration Quality Left: {VarjoEyeTracking.GetGazeCalibrationQuality().left}, Calibration Quality Right {VarjoEyeTracking.GetGazeCalibrationQuality().right}s");
-    }
 
     void AdjustRawImageSize()
     {
@@ -140,7 +78,7 @@ public class CameraCapture : MonoBehaviour
         rawImageRect.offsetMax = Vector2.zero;
     }
 
-    IEnumerator CaptureAndSendImage(int X,int Y)
+    public IEnumerator CaptureAndSendImage(int X,int Y)
     {
         isProcessingFrame = true;
 
@@ -161,7 +99,7 @@ public class CameraCapture : MonoBehaviour
         //isProcessingFrame = false;
     }
 
-    private async Task SendImageToPythonServer(byte[] imageBytes, int X, int Y)
+    public async Task SendImageToPythonServer(byte[] imageBytes, int X, int Y)
     {
         float startTime = Time.time;  // Start time for the method
 
@@ -185,21 +123,21 @@ public class CameraCapture : MonoBehaviour
             // Time taken to make the HTTP request
             float requestStartTime = Time.time;
             HttpResponseMessage response = await httpClient.PostAsync("http://127.0.0.1:5005/process-image", content);
-            Debug.Log($"[SendImageToPythonServer] HTTP request took {Time.time - requestStartTime} seconds");
+            //Debug.Log($"[SendImageToPythonServer] HTTP request took {Time.time - requestStartTime} seconds");
 
             if (response.IsSuccessStatusCode)
             {
                 // Time taken to read and process the response
                 
                 byte[] processedImageBytes = await response.Content.ReadAsByteArrayAsync();
-
+                //Debug.Log($"[SendImageToPythonServer] Total time for processing image: {Time.time - startTime} seconds");
                 // Load the processed image back into a Texture2D
-                Texture2D processedTexture = new Texture2D(passThroughRenderTexture.width, passThroughRenderTexture.height);
+                processedTexture = new Texture2D(passThroughRenderTexture.width, passThroughRenderTexture.height);
                 processedTexture.LoadImage(processedImageBytes);
 
                 // Set the processed texture to the RawImage's texture
-                rawImageDisplay.texture = processedTexture;
-                Debug.Log($"[SendImageToPythonServer] Total time for processing image: {Time.time - startTime} seconds");
+                //rawImageDisplay.texture = processedTexture;
+                
                 isProcessingFrame = false;
             }
             else

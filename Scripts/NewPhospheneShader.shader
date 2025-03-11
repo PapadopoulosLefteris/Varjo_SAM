@@ -54,24 +54,22 @@ Shader "Hidden/PhospheneShader"
                 float2 pixelCoord = i.uv*512;
                 fixed4 color = fixed4(0, 0, 0, 1); // Start with black (or transparent)
                 float2 _Offset = float2(_Offsetx,_Offsety);
-                fixed4 inputColor = tex2D(_MainTex, i.uv);
                 
            
                     
                     for(int idx = 0; idx < _Count; idx++)
                     {
-                        float2 position = _Positions[idx] + _Offset;
+                        float2 position = _Positions[idx]+ _Offset;
                         float sigma = _Sigma[idx];
                         float distanceToCenter = length(position - pixelCoord);
         
                         // Gaussian falloff
-                        float falloff = exp(-0.5 * (distanceToCenter * distanceToCenter)/(sigma ));//(0.01)); //calculate square in controller
+                        float falloff = exp(-0.5 * (distanceToCenter * distanceToCenter)/(sigma));//(0.01)); //calculate square in controller
 
                         // Add the new phosphene's color to the current color
-                        color += fixed4(1, 1, 1, 1) * falloff;
+                        color += fixed4(1, 1, 1, 1)* falloff;
                     }
                 
-                   
                 return color;
                 
             }
