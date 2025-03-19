@@ -31,12 +31,13 @@ public class PhospheneRenderer : MonoBehaviour
     public RenderTexture inputTexture;
     public RenderTexture edgeTexture;
     public RenderTexture phospheneInputTexture;
+    public RenderTexture semanticRenderTexture;
     public RawImage outputRawImage;
     public RectTransform canvasRectTransform;
 
     //Render Texture properties
-    public int textureWidth = 512;
-    public int textureHeight = 512;
+    public int textureWidth = 1024;
+    public int textureHeight = 1024;
 
     //Materials
     private Material phospheneMaterial;
@@ -45,28 +46,29 @@ public class PhospheneRenderer : MonoBehaviour
     //Compute Buffers
     private ComputeBuffer positionsBuffer;
     private ComputeBuffer sigmaBuffer;
+    private ComputeBuffer positionsBufferSampled;
+    private ComputeBuffer sigmaBufferSampled;
     private ComputeBuffer rfBuffer;
     private ComputeBuffer indexArrayBuffer;
-    private ComputeBuffer debugBuffer;
-    private ComputeBuffer newbuff;
-    private ComputeBuffer newsig;
+
 
 
     //Shaders
     public Shader phospheneShader; //Phosphene Renderer
     public Shader edgeDetectionShader;
     public ComputeShader phospheneComputeShader; //Sampler
+    public ComputeShader Combine; //Combine Segmentation and Edge Detection 
 
     //Simulation properties (Might move to YAML);
     public static float a = 0.75f;
     public static float b = 120.0f;
     public static float k = 17.3f;
-    public static float amp = 150e-6f;
-    public static float fov = 102.0f;
+    public static float amp = 100e-6f;
+    public static float fov = 200f;
     public static float radius_to_sigma = 0.5f;
     public static float current_spread = 675e-6f;
     public static float rf_size = 0.5f;
-    public static float dropout_probability = 0.9f;
+    public static float dropout_probability = 0.85f;
     public int phospheneCount;
     public string yamlFilePath = "C:\\Users\\Administrator\\Desktop\\phosphene_schemes\\grid_coords_squares_utah.yaml";
 
@@ -74,6 +76,8 @@ public class PhospheneRenderer : MonoBehaviour
     public float offsety = 0;
     public float[] pointCoords;
     public float[] pointLabels;
+
+    private bool switchMethods = true;
 
     // The class that represents the YAML structure
     public class PhosphenePositions
@@ -94,15 +98,18 @@ public class PhospheneRenderer : MonoBehaviour
 
     void Start()
     {
-        QualitySettings.vSyncCount = 0;
-        Application.targetFrameRate = 5;
+
         InitializeRenderTexture();
         InitializePhosphenes();
         InitializeMaterial();
+        InitializeBuffers();
 
-        outputRawImage.texture = phospheneRenderTexture;
         pointCoords = new float[2] { 512, 512 };
         pointLabels = new float[1] { 1.0f };
+
+
+        //outputRawImage.texture = inputTexture;
+        outputRawImage.texture = phospheneRenderTexture;
         //For testing Edge Detection
         //outputRawImage.texture = edgeTexture;
 
@@ -112,14 +119,33 @@ public class PhospheneRenderer : MonoBehaviour
     void Update()
     {
 
+        int kernel = Combine.FindKernel("Combine");
 
-        
         GazeOffset();
-        model.Seg(inputTexture, pointCoords,pointLabels);
+        if (switchMethods)
+        {
+            model.Seg(inputTexture, pointCoords, pointLabels);
+            Graphics.Blit(model.mobileSAMPredictor.Result, phospheneInputTexture);
 
+        }
+        else { ApplyEdgeDetection();
+            phospheneInputTexture = edgeTexture;
+        }
+            
         
-        Graphics.Blit(model.mobileSAMPredictor.Result, phospheneInputTexture);
-        //ApplyEdgeDetection();
+        //Graphics.Blit(model.mobileSAMPredictor.Result, semanticRenderTexture);
+        //// Set shader parameters
+        //Combine.SetTexture(kernel, "_TexA", semanticRenderTexture);
+        //Combine.SetTexture(kernel, "_TexB", edgeTexture);
+        //Combine.SetTexture(kernel, "_Result", phospheneInputTexture);
+
+        //// Dispatch the shader (adjust thread groups as needed)
+        //int threadGroupsX = Mathf.CeilToInt(phospheneInputTexture.width / 8f);
+        //int threadGroupsY = Mathf.CeilToInt(phospheneInputTexture.height / 8f);
+        //Combine.Dispatch(kernel, threadGroupsX, threadGroupsY, 1);
+
+
+
         RenderPhosphenes();
         // Check if the "F" key is pressed
         if (Input.GetKeyDown(KeyCode.F))
@@ -135,7 +161,24 @@ public class PhospheneRenderer : MonoBehaviour
         {
             outputRawImage.texture = inputTexture;
         }
+        if (Input.GetKeyDown(KeyCode.Space))
+        {
+            if (switchMethods)
+            {
+                switchMethods = false;
+                Graphics.SetRenderTarget(model.mobileSAMPredictor.Result);
+                GL.Clear(true, true, Color.clear);
+                Graphics.SetRenderTarget(null); // Reset target // Clear depth and color
+            }
+            else
+            {
+                switchMethods = true;
+            }
+
+        }
     }
+
+
     public Complex dipole(Complex w)
     {
         Complex e = Complex.Exp(w / k);  // Use complex exponentiation
@@ -184,7 +227,7 @@ public class PhospheneRenderer : MonoBehaviour
         int phospheneCount_initial = phosphenePositions.x.Count;
         phospheneCount = extendedX.Count;
 
-        
+
         phosphenes = new Phosphene[phospheneCount];
 
 
@@ -195,7 +238,7 @@ public class PhospheneRenderer : MonoBehaviour
 
 
             //Calculate the distortion of the cartesian coordinates of the phosphenes due to magnification
-           
+
             Complex z = new Complex(extendedX[i], extendedY[i]);
 
             z = dipole(z);
@@ -206,21 +249,26 @@ public class PhospheneRenderer : MonoBehaviour
             float dipolex_neg = dipolex * (-1.0f);
             float dipoley_neg = dipoley * (-1.0f);
 
-          
+
 
             float r = (float)z.Magnitude; //Correct
             float magnification = GetMagnification(r); //Correct
             float sigma = radius_to_sigma * MathF.Sqrt(amp / current_spread) / magnification; //Correct
             float rf = rf_size / magnification;
-            rf = ((rf) / (2 * fov)) * 512.0f;
+            //rf = ((rf) / (2 * fov)) * 512.0f;
+            rf = ((rf) / (2 * fov)) * textureWidth;
 
+            //float x_tex = ((dipolex + fov) / (2 * fov)) * 512.0f;
+            //float y_tex = ((dipoley + fov) / (2 * fov)) * 512.0f;
 
+            //float x_tex_neg = ((dipolex_neg + fov) / (2 * fov)) * 512.0f;
+            //float y_tex_neg = ((dipoley_neg + fov) / (2 * fov)) * 512.0f;
 
-            float x_tex = ((dipolex + fov) / (2 * fov)) * 512.0f;
-            float y_tex = ((dipoley + fov) / (2 * fov)) * 512.0f;
+            float x_tex = ((dipolex + fov) / (2 * fov)) * textureWidth;
+            float y_tex = ((dipoley + fov) / (2 * fov)) * textureWidth;
 
-            float x_tex_neg = ((dipolex_neg + fov) / (2 * fov)) * 512.0f;
-            float y_tex_neg = ((dipoley_neg + fov) / (2 * fov)) * 512.0f;
+            float x_tex_neg = ((dipolex_neg + fov) / (2 * fov)) * textureWidth;
+            float y_tex_neg = ((dipoley_neg + fov) / (2 * fov)) * textureWidth;
             // Create the phosphenes struct
 
             if (UnityEngine.Random.value < dropout_probability)
@@ -266,6 +314,12 @@ public class PhospheneRenderer : MonoBehaviour
         };
         phospheneRenderTexture.Create();
 
+        semanticRenderTexture = new RenderTexture(textureWidth, textureHeight, 0, RenderTextureFormat.ARGB32)
+        {
+            enableRandomWrite = true
+        };
+        semanticRenderTexture.Create();
+
         phospheneInputTexture = new RenderTexture(textureWidth, textureHeight, 0, RenderTextureFormat.ARGB32)
         {
             enableRandomWrite = true
@@ -273,7 +327,7 @@ public class PhospheneRenderer : MonoBehaviour
         phospheneInputTexture.Create();
 
 
-        edgeTexture = new RenderTexture(textureWidth, textureHeight, 0, RenderTextureFormat.ARGB32){
+        edgeTexture = new RenderTexture(textureWidth, textureHeight, 0, RenderTextureFormat.ARGB32) {
             enableRandomWrite = true
         };
         edgeTexture.Create();
@@ -298,7 +352,7 @@ public class PhospheneRenderer : MonoBehaviour
         //EyeTacker.GetEyeTracking();
         offsetx = EyeTacker.offsetx;
         offsety = EyeTacker.offsety;
-        pointCoords = new float[2] { (float) EyeTacker.x,(float) EyeTacker.y};
+        pointCoords = new float[2] { (float)EyeTacker.x, (float)EyeTacker.y };
     }
 
 
@@ -308,22 +362,14 @@ public class PhospheneRenderer : MonoBehaviour
         Graphics.Blit(inputTexture, edgeTexture, edgeDetectionMaterial);
     }
 
-    public void RenderPhosphenes()
-    {
-
-        int kernel = phospheneComputeShader.FindKernel("SampleImage");
-
+    public void InitializeBuffers(){
 
         // Prepare position data
-        //UnityEngine.Vector2[] positions = phosphenes.Select(p => new UnityEngine.Vector2(p.position.x, p.position.y)).ToArray();
         UnityEngine.Vector2[] positions = phosphenes.Select(p => new UnityEngine.Vector2(p.position_texture.x, p.position_texture.y)).ToArray();
-
-        // Create/release compute buffer
         if (positionsBuffer != null)
             positionsBuffer.Release();
-
-        //Prepare position data for compute shader
         positionsBuffer = new ComputeBuffer(phosphenes.Length, sizeof(float) * 2);
+        positionsBufferSampled = new ComputeBuffer(phosphenes.Length, sizeof(float) * 2);
         positionsBuffer.SetData(positions);
 
         // Prepare rf data 
@@ -333,111 +379,64 @@ public class PhospheneRenderer : MonoBehaviour
         rfBuffer = new ComputeBuffer(phosphenes.Length, sizeof(float));
         rfBuffer.SetData(rfs);
 
-
-        
-
         // Prepare sigma data 
         float[] sigmas = phosphenes.Select(p => p.sigma).ToArray();
         if (sigmaBuffer != null)
             sigmaBuffer.Release();
         sigmaBuffer = new ComputeBuffer(phosphenes.Length, sizeof(float));
+        sigmaBufferSampled = new ComputeBuffer(phosphenes.Length, sizeof(float));
         sigmaBuffer.SetData(sigmas);
 
-
-        // Release the previous buffer if it exists
-        if (indexArrayBuffer != null)
-            indexArrayBuffer.Release();
-
-        // Create a new buffer and initialize it with zeros
         indexArrayBuffer = new ComputeBuffer(phospheneCount, sizeof(uint));
+    }
+
+
+
+
+    public void RenderPhosphenes()
+    {
+
+        int kernel = phospheneComputeShader.FindKernel("SampleImage");
+
+
+        
         int[] zeroArray = new int[phospheneCount]; // All elements are 0 by default
         indexArrayBuffer.SetData(zeroArray);
 
         // Pass the edgeTexture to the compute shader as input
        
-        if (debugBuffer != null)
-            debugBuffer.Release();
-        debugBuffer = new ComputeBuffer(phospheneCount,sizeof(float)*2);
+        
 
         //phospheneComputeShader.SetTexture(kernel, "_InputTexture", edgeTexture);
         phospheneComputeShader.SetTexture(kernel, "_InputTexture", phospheneInputTexture);
         phospheneComputeShader.SetBuffer(kernel, "_Positions", positionsBuffer);
+        phospheneComputeShader.SetBuffer(kernel, "_Positions", positionsBuffer);
+        phospheneComputeShader.SetBuffer(kernel, "_PositionsOut", positionsBufferSampled);
+        phospheneComputeShader.SetBuffer(kernel, "_Sigma", sigmaBuffer);
+        phospheneComputeShader.SetBuffer(kernel, "_SigmaOut", sigmaBufferSampled);
         phospheneComputeShader.SetBuffer(kernel, "_RFSize", rfBuffer);
         phospheneComputeShader.SetBuffer(kernel, "_IndexArray", indexArrayBuffer);
-        phospheneComputeShader.SetBuffer(kernel, "_Debug", debugBuffer);
         phospheneComputeShader.SetInt("_Count", phospheneCount);
         phospheneComputeShader.SetFloat("_Fov", fov);
-        phospheneComputeShader.SetInt("_TextureSize", 512); //Make it adaptable 
+        //phospheneComputeShader.SetInt("_TextureSize", 512); //Make it adaptable 
+        phospheneComputeShader.SetInt("_TextureSize", textureWidth);
         phospheneComputeShader.SetInt("_Offsetx", (int)offsetx);
         phospheneComputeShader.SetInt("_Offsety", (int)offsety);   
 
 
         phospheneComputeShader.Dispatch(kernel, Mathf.CeilToInt(phospheneCount /64f), 1, 1);
 
-        UnityEngine.Vector2[] debugdata = new UnityEngine.Vector2[debugBuffer.count]; 
-        debugBuffer.GetData(debugdata);
 
-        indexArrayBuffer.GetData(zeroArray);
-    
-        // Create a list to store the selected positions
-        List<UnityEngine.Vector2> selectedPositions = new List<UnityEngine.Vector2>();
-        List<float> selectedSigmas = new List<float>();
-
+        phospheneMaterial.SetBuffer("_Positions", positionsBufferSampled);
+        phospheneMaterial.SetBuffer("_Sigma", sigmaBufferSampled);
+        phospheneMaterial.SetInt("_Count", phospheneCount);
+        phospheneMaterial.SetFloat("_Offsetx", offsetx);
+        phospheneMaterial.SetFloat("_Offsety", offsety);
+        // Render to texture
+        Graphics.SetRenderTarget(phospheneRenderTexture);
+        GL.Clear(true, true, Color.clear);
+        Graphics.Blit(null, phospheneRenderTexture, phospheneMaterial);
        
-
-        int newlength = 0;
-        // Loop through the index array and select positions where the index is 1
-        for (int i = 0; i < phospheneCount; i++)
-        {
-            if (zeroArray[i] == 1)
-            {
-                // Add the position to the list if the corresponding index is 1
-                //selectedPositions.Add(new UnityEngine.Vector2(phosphenes[i].position.x, phosphenes[i].position.y));
-                selectedPositions.Add(new UnityEngine.Vector2(phosphenes[i].position_texture.x, phosphenes[i].position_texture.y));
-                selectedSigmas.Add(phosphenes[i].sigma);
-                newlength++;
-            }
-           
-        }
-
-        // Convert the list to an array
-        UnityEngine.Vector2[] filteredPositions = selectedPositions.ToArray();
-        float[] filteredSigmas = selectedSigmas.ToArray();
-        
-        phospheneMaterial.SetFloat("_Fov", fov);
-        // Set shader properties
-        if (filteredPositions.Length == 0)
-        {
-         
-        }
-        else
-        {
-            if (newbuff != null)
-                newbuff.Release();
-
-            if (newsig != null)
-                newsig.Release();
-
-
-            newbuff = new ComputeBuffer(newlength, sizeof(float) * 2);
-            newsig = new ComputeBuffer(newlength, sizeof(float));
-
-            newbuff.SetData(filteredPositions);
-            newsig.SetData(filteredSigmas);
-
-            phospheneMaterial.SetBuffer("_Positions", newbuff);
-            phospheneMaterial.SetBuffer("_Sigma", newsig);
-            phospheneMaterial.SetInt("_Count", newlength);
-            phospheneMaterial.SetFloat("_Offsetx", offsetx);
-            phospheneMaterial.SetFloat("_Offsety", offsety);
-            // Render to texture
-            Graphics.SetRenderTarget(phospheneRenderTexture);
-            GL.Clear(true, true, Color.clear);
-
-            Graphics.Blit(null, phospheneRenderTexture, phospheneMaterial);
-            //Graphics.Blit(phospheneInputTexture, phospheneRenderTexture, phospheneMaterial);
-
-        }
 
 
 
@@ -445,7 +444,7 @@ public class PhospheneRenderer : MonoBehaviour
     }
 
     void OnDisable()
-    {
+    {    
         if (positionsBuffer != null)
         {
             positionsBuffer.Release();
@@ -456,20 +455,25 @@ public class PhospheneRenderer : MonoBehaviour
             sigmaBuffer.Release();
             sigmaBuffer = null;
         }
+        if (rfBuffer != null)
+        {
+            rfBuffer.Release();
+            rfBuffer = null;
+        }
         if (indexArrayBuffer != null)
+                {
+                    indexArrayBuffer.Release();
+                    indexArrayBuffer = null;
+                }
+        if (positionsBufferSampled != null)
         {
-            indexArrayBuffer.Release();
-            indexArrayBuffer = null;
+            positionsBufferSampled.Release();
+            positionsBufferSampled = null;
         }
-        if (newbuff != null)
+        if (sigmaBufferSampled != null)
         {
-            newbuff.Release();
-            newbuff = null;
-        }
-        if (newsig != null)
-        {
-            newsig.Release();
-            newsig = null;
+            sigmaBufferSampled.Release();
+            sigmaBufferSampled = null;
         }
     }
 }

@@ -31,17 +31,13 @@ public class EyeTrackingCapture : MonoBehaviour
     void Start()
     {
         imagesize = passThroughRenderTexture.width;
-        Debug.Log($"Screen width {Screen.width}");
-        Debug.Log($"Screen height {Screen.height}");
+        
         //screenWidth = Screen.width;
         //screenHeight = Screen.height;
-        //screenHeight = 662;
-        //screenWidth = 668;
 
         screenWidth = 710;
         screenHeight = 704;
         VarjoEyeTracking.SetGazeOutputFilterType(VarjoEyeTracking.GazeOutputFilterType.None);
-        Debug.Log(VarjoEyeTracking.GetGazeOutputFilterType());
     }
 
     void Update()
@@ -109,8 +105,8 @@ public class EyeTrackingCapture : MonoBehaviour
         //y= imagesize - Mathf.RoundToInt((screenPoint.y / 2816) * imagesize);
 
         //Debug.Log(gazeDirection);
-        Debug.Log($"Offsetx = {offsetx}, Offsety = {offsety}, imagesize = {imagesize}");
-        Debug.Log($"X = {x}, Y = {y}, Screenpoint_x = {screenPoint.x}, Screenpoint_y = {screenPoint.y}");
+        //Debug.Log($"Offsetx = {offsetx}, Offsety = {offsety}, imagesize = {imagesize}");
+        //Debug.Log($"X = {x}, Y = {y}, Screenpoint_x = {screenPoint.x}, Screenpoint_y = {screenPoint.y}");
         //Debug.Log("Screen Resolution: " + Screen.width + "x" + Screen.height);
 
 

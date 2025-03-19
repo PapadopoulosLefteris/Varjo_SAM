@@ -54,21 +54,32 @@ Shader "Hidden/PhospheneShader"
                 float2 pixelCoord = i.uv*512;
                 fixed4 color = fixed4(0, 0, 0, 1); // Start with black (or transparent)
                 float2 _Offset = float2(_Offsetx,_Offsety);
-                
+                float2 adjustedCoord = pixelCoord - _Offset;
            
                     
-                    for(int idx = 0; idx < _Count; idx++)
-                    {
-                        float2 position = _Positions[idx]+ _Offset;
-                        float sigma = _Sigma[idx];
-                        float distanceToCenter = length(position - pixelCoord);
-        
-                        // Gaussian falloff
-                        float falloff = exp(-0.5 * (distanceToCenter * distanceToCenter)/(sigma));//(0.01)); //calculate square in controller
-
-                        // Add the new phosphene's color to the current color
-                        color += fixed4(1, 1, 1, 1)* falloff;
+                    // Loop over each phosphene.
+                for (int idx = 0; idx < _Count; idx++)
+                {
+                    if (_Sigma[idx]==-1){
+                        continue; // Skip this iteration
                     }
+                    // Calculate the difference from the current phosphene position to the adjusted coordinate.
+                    // This is equivalent to (_Positions[idx] + offset) - pixelCoord.
+                    float2 diff = _Positions[idx] - adjustedCoord;
+        
+                    // Compute the squared distance (avoiding the cost of sqrt)
+                    float distSq = dot(diff, diff);
+        
+                    // Use the squared distance in the Gaussian falloff.
+                    // Note: This formula replaces:
+                    //   exp(-0.5 * (length(diff)^2) / sigma)
+                    // with the more efficient dot product calculation.
+                    float sigma = _Sigma[idx];
+                    float falloff = exp(-0.5 * distSq / sigma);
+        
+                    // Accumulate the phosphene's contribution.
+                    color += fixed4(falloff, falloff, falloff, falloff);
+                }
                 
                 return color;
                 

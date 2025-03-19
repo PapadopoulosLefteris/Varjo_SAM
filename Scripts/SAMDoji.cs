@@ -26,7 +26,6 @@ public class SAMDoji : MonoBehaviour
       
         // Initialize MobileSAM
         mobileSAMPredictor = new MobileSAM();
-        
         mobileSAMPredictor.Backend = BackendType.GPUCompute;
 
   
@@ -35,7 +34,11 @@ public class SAMDoji : MonoBehaviour
 
     public void Seg(RenderTexture inputTexture, float[] pointCoords, float[] pointLabels )
     {
-
+        if (inputTensor != null)
+        {
+            inputTensor.Dispose();
+            inputTensor = null;
+        }
         // Timing step 1: Reading pixels from RenderTexture
         RenderTexture.active = inputTexture;
         tex = new Texture2D(inputTexture.width, inputTexture.height, TextureFormat.RGB24, false);
@@ -45,7 +48,7 @@ public class SAMDoji : MonoBehaviour
 
         inputTensor = TextureConverter.ToTensor(tex);
         inputTensor.Reshape(new TensorShape(3, 1024,1024));
-
+        Destroy(tex);
         var origSize = (1024, 1024);
 
         // Timing step 2: Initializing MobileSAM and setting backend
@@ -68,5 +71,6 @@ public class SAMDoji : MonoBehaviour
     private void OnDestroy()
     {
         mobileSAMPredictor.Dispose();
+        inputTensor.Dispose();
     }
 }

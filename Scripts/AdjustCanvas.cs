@@ -4,8 +4,8 @@ public class MatchCanvasWithFOV : MonoBehaviour
 {
     public Camera playerCamera; // Reference to the player's camera
     public RectTransform canvasRectTransform; // Reference to the canvas RectTransform
-    public float distanceFromCamera = 886f; // Distance between camera and canvas
-    //public float distanceFromCamera = 1f;
+    //public float distanceFromCamera = 886f; // Distance between camera and canvas
+    public float distanceFromCamera = 1f;
     public EyeTrackingCapture EyeTracker;
     public Transform rawImageTransform;
 
@@ -25,7 +25,6 @@ public class MatchCanvasWithFOV : MonoBehaviour
         float height = 2f * distanceFromCamera * Mathf.Tan(fov * 0.5f * Mathf.Deg2Rad);
         // Step 3: Calculate the width based on the aspect ratio of the camera
         float width = height * playerCamera.aspect;
-
         // Step 4: Set the canvas size to match the camera's FOV
         canvasRectTransform.sizeDelta = new Vector2(width, height);
 
@@ -36,11 +35,15 @@ public class MatchCanvasWithFOV : MonoBehaviour
 
         Vector3 trackingForward = EyeTracker.gazeDirection;
 
-        canvasRectTransform.rotation = playerCamera.transform.rotation* Quaternion.LookRotation(trackingForward) ; // Optional, keeps the canvas aligned to the camera's rotation
+        if (trackingForward != Vector3.zero)
+        {
+            canvasRectTransform.rotation = playerCamera.transform.rotation * Quaternion.LookRotation(trackingForward); // Optional, keeps the canvas aligned to the camera's rotation
 
 
-        
-       
+        }
+
+
+
 
         //Debug.Log($"Forward {trackingForward}, Quaternion {Quaternion.LookRotation(trackingForward, Vector3.up)}");
         //Debug.Log($"Player Angle:{playerCamera.transform.rotation.eulerAngles}, Tracker Angle:{rotation.eulerAngles}");

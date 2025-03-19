@@ -22,7 +22,6 @@ public class ServerController : MonoBehaviour
     private HttpClient httpClient;
     public bool isProcessingFrame = false;       // Tracks if the current frame is being processed
     private float captureInterval = 0.07f;         // Capture every 0.1 seconds
-    private float nextCaptureTime = 0;
     public float floatingGazeTargetDistance = 3f;
 
     private float distanceToCanvas;

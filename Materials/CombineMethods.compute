@@ -1,0 +1,16 @@
+#pragma kernel Combine
+
+RWTexture2D<float4> _Result;
+Texture2D<float4> _TexA;
+Texture2D<float4> _TexB;
+
+[numthreads(8, 8, 1)]
+void Combine(uint3 id : SV_DispatchThreadID)
+{
+    float4 colorA = _TexA.Load(int3(id.x, id.y, 0));
+    float4 colorB = _TexB.Load(int3(id.x, id.y, 0));
+
+    // Simple addition, clamped to 1.0
+    float4 result = saturate(colorA + colorB);
+    _Result[id.xy] = result;
+}

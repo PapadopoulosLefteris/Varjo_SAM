@@ -4,22 +4,24 @@
 
 RWTexture2D<float4> _InputTexture;
 StructuredBuffer<float2> _Positions; 
+StructuredBuffer<float> _Sigma;
 StructuredBuffer<float> _RFSize;
+RWStructuredBuffer<float2> _PositionsOut;
+RWStructuredBuffer<float> _SigmaOut;
 RWStructuredBuffer<uint> _IndexArray; //Activation index array
 RWStructuredBuffer<uint> _Counter;
-RWStructuredBuffer<float2> _Debug;
 float _Fov;
 uint _Count;
 int _TextureSize;
 int _Offsetx;
 int _Offsety;
 
+
 [numthreads(64, 1, 1)]
 void SampleImage(uint3 id : SV_DispatchThreadID)
 
 {
     uint i = id.x;
-
     
     float Radius = _RFSize[i];
     
@@ -44,7 +46,9 @@ void SampleImage(uint3 id : SV_DispatchThreadID)
             float4 color = _InputTexture.Load(int3(x, y, 0));
             if (color.g > 0.0)
             {
-                _IndexArray[i] = 1;
+                //_IndexArray[i] = 1;
+                _PositionsOut[i] = _Positions[i];
+                _SigmaOut[i] = _Sigma[i];
                 return;
             }
             
@@ -53,8 +57,8 @@ void SampleImage(uint3 id : SV_DispatchThreadID)
         
         
     }
-    _Debug[i].x = cx;
-    _Debug[i].y = cy;
+    _PositionsOut[i] = -1;
+    _SigmaOut[i] = -1;
     //_IndexArray[i] = 1; //use for debugging eyetracker
 }
 

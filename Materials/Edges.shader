@@ -1,10 +1,12 @@
-Shader "Custom/EdgeDetection"
+Shader "Custom/CannyEdgeDetection"
 {
     Properties
     {
         _MainTex ("Texture", 2D) = "white" {}
-        _EdgeThreshold ("Edge Threshold", Range(0, 1)) = 0.2
+        _LowThreshold ("Low Threshold", Range(0, 1)) = 0.4
+        _HighThreshold ("High Threshold", Range(0, 1)) = 0.9
     }
+
     SubShader
     {
         Tags { "RenderType"="Opaque" }
@@ -12,7 +14,7 @@ Shader "Custom/EdgeDetection"
         {
             CGPROGRAM
             #pragma vertex vert
-            #pragma fragment FragEdgeDetection
+            #pragma fragment FragCannyEdgeDetection
             #include "UnityCG.cginc"
 
             struct appdata_t {
@@ -26,8 +28,9 @@ Shader "Custom/EdgeDetection"
             };
 
             sampler2D _MainTex;
-            float4 _MainTex_TexelSize; // (1/width, 1/height, width, height)
-            float _EdgeThreshold;
+            float4 _MainTex_TexelSize;
+            float _LowThreshold;
+            float _HighThreshold;
 
             Varyings vert(appdata_t v)
             {
@@ -37,49 +40,59 @@ Shader "Custom/EdgeDetection"
                 return o;
             }
 
-            float4 FragEdgeDetection(Varyings i) : SV_Target
+            float luminance(float3 color)
             {
-                float2 texelSize = _MainTex_TexelSize.xy;
+                return dot(color, float3(0.299, 0.587, 0.114));
+            }
 
-                // Sample surrounding pixels
-                float3 sampleTL = tex2D(_MainTex, i.uv + texelSize * float2(-1, -1)).rgb;
-                float3 sampleTC = tex2D(_MainTex, i.uv + texelSize * float2( 0, -1)).rgb;
-                float3 sampleTR = tex2D(_MainTex, i.uv + texelSize * float2( 1, -1)).rgb;
+            float4 FragCannyEdgeDetection(Varyings i) : SV_Target
+            {
+                float2 texel = _MainTex_TexelSize.xy;
 
-                float3 sampleML = tex2D(_MainTex, i.uv + texelSize * float2(-1,  0)).rgb;
-                float3 sampleMC = tex2D(_MainTex, i.uv).rgb; // Center pixel
-                float3 sampleMR = tex2D(_MainTex, i.uv + texelSize * float2( 1,  0)).rgb;
+                // Gaussian Blur Kernel (simplified)
+                float3 blur = (
+                    tex2D(_MainTex, i.uv + texel * float2(-1, -1)).rgb * 1 +
+                    tex2D(_MainTex, i.uv + texel * float2( 0, -1)).rgb * 2 +
+                    tex2D(_MainTex, i.uv + texel * float2( 1, -1)).rgb * 1 +
+                    tex2D(_MainTex, i.uv + texel * float2(-1,  0)).rgb * 2 +
+                    tex2D(_MainTex, i.uv).rgb * 4 +
+                    tex2D(_MainTex, i.uv + texel * float2( 1,  0)).rgb * 2 +
+                    tex2D(_MainTex, i.uv + texel * float2(-1,  1)).rgb * 1 +
+                    tex2D(_MainTex, i.uv + texel * float2( 0,  1)).rgb * 2 +
+                    tex2D(_MainTex, i.uv + texel * float2( 1,  1)).rgb * 1
+                ) / 16.0;
 
-                float3 sampleBL = tex2D(_MainTex, i.uv + texelSize * float2(-1,  1)).rgb;
-                float3 sampleBC = tex2D(_MainTex, i.uv + texelSize * float2( 0,  1)).rgb;
-                float3 sampleBR = tex2D(_MainTex, i.uv + texelSize * float2( 1,  1)).rgb;
+                float lum = luminance(blur);
 
-                // Convert to grayscale (luminance)
-                float lumTL = dot(sampleTL, float3(0.299, 0.587, 0.114));
-                float lumTC = dot(sampleTC, float3(0.299, 0.587, 0.114));
-                float lumTR = dot(sampleTR, float3(0.299, 0.587, 0.114));
+                // Sobel operator for gradients
+                float gx = (
+                    -1 * luminance(tex2D(_MainTex, i.uv + texel * float2(-1, -1)).rgb) +
+                     1 * luminance(tex2D(_MainTex, i.uv + texel * float2(1, -1)).rgb) +
+                    -2 * luminance(tex2D(_MainTex, i.uv + texel * float2(-1, 0)).rgb) +
+                     2 * luminance(tex2D(_MainTex, i.uv + texel * float2(1, 0)).rgb) +
+                    -1 * luminance(tex2D(_MainTex, i.uv + texel * float2(-1, 1)).rgb) +
+                     1 * luminance(tex2D(_MainTex, i.uv + texel * float2(1, 1)).rgb)
+                );
 
-                float lumML = dot(sampleML, float3(0.299, 0.587, 0.114));
-                float lumMC = dot(sampleMC, float3(0.299, 0.587, 0.114));
-                float lumMR = dot(sampleMR, float3(0.299, 0.587, 0.114));
+                float gy = (
+                    -1 * luminance(tex2D(_MainTex, i.uv + texel * float2(-1, -1)).rgb) +
+                    -2 * luminance(tex2D(_MainTex, i.uv + texel * float2(0, -1)).rgb) +
+                    -1 * luminance(tex2D(_MainTex, i.uv + texel * float2(1, -1)).rgb) +
+                     1 * luminance(tex2D(_MainTex, i.uv + texel * float2(-1, 1)).rgb) +
+                     2 * luminance(tex2D(_MainTex, i.uv + texel * float2(0, 1)).rgb) +
+                     1 * luminance(tex2D(_MainTex, i.uv + texel * float2(1, 1)).rgb)
+                );
 
-                float lumBL = dot(sampleBL, float3(0.299, 0.587, 0.114));
-                float lumBC = dot(sampleBC, float3(0.299, 0.587, 0.114));
-                float lumBR = dot(sampleBR, float3(0.299, 0.587, 0.114));
+                // Gradient magnitude and direction
+                float gradient = sqrt(gx * gx + gy * gy);
 
-                // Sobel operator
-                float gx = (-1.0 * lumTL) + ( 1.0 * lumTR) +
-                           (-2.0 * lumML) + ( 2.0 * lumMR) +
-                           (-1.0 * lumBL) + ( 1.0 * lumBR);
-
-                float gy = (-1.0 * lumTL) + (-2.0 * lumTC) + (-1.0 * lumTR) +
-                           ( 1.0 * lumBL) + ( 2.0 * lumBC) + ( 1.0 * lumBR);
-
-                // Compute edge magnitude
-                float edge = sqrt(gx * gx + gy * gy);
-
-                // Apply threshold
-                return edge > _EdgeThreshold ? float4(1,1,1,1) : float4(0,0,0,1);
+                // Double thresholding
+                if (gradient >= _HighThreshold)
+                    return float4(1, 1, 1, 1); // Strong edge
+                else if (gradient >= _LowThreshold)
+                    return float4(0.5, 0.5, 0.5, 1); // Weak edge (visualized differently)
+                else
+                    return float4(0, 0, 0, 1); // Non-edge
             }
             ENDCG
         }
